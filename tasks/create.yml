@@ -1,0 +1,69 @@
+---
+# tasks file for pve_ct_deploy
+#
+#  ████████╗ █████╗ ███████╗██╗  ██╗
+#  ╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝
+#     ██║   ███████║███████╗█████╔╝
+#     ██║   ██╔══██║╚════██║██╔═██╗
+#     ██║   ██║  ██║███████║██║  ██╗
+#     ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+#
+
+# -----------------------------------------------------------------------------
+# TASK FILE: create.yml
+# DESCRIPTION: This task file is responsible for creating LXC containers on a 
+#              Proxmox node. It iterates over a list of container definitions
+#              and configures each container with the specified parameters such
+#              as hostname, resources, network, and storage. The task ensures
+#              flexibility and automation for deploying multiple containers.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# STEP 4.1: Create LXC Containers
+# -----------------------------------------------------------------------------
+- name: (pve_ct_deploy) | create | Create container instance
+  community.general.proxmox:
+    # Proxmox API connection details
+    api_host: "{{ pve_host }}"                                  # Proxmox API host
+    api_password: "{{ pve_api_password }}"
+    api_port: "{{ pve_port }}"                                  # Proxmox API port
+    #api_token_id: "{{ pve_tokenid.split('!')[1] }}"             # Token ID for API authentication
+    #api_token_secret: "{{ pve_token_secret }}"                  # Token secret for API authentication
+    #api_user: "{{ pve_tokenid.split('!')[0] }}"                 # Proxmox API user extracted from token
+    api_user: "root@pam"
+    validate_certs: "{{ pve_validate_certs | default(false) }}" # SSL certificate validation
+
+    # Proxmox node details
+    node: "{{ pve_node }}"
+
+    # Instance details
+    ostemplate: "{{ ostemplate }}"                              # The template for VM creating
+    pubkey: "{{ pubkey | default(omit) }}"                      # Public key to add to /root/.ssh/authorized_keys
+    password: "{{ root_password | default(omit) }}"             # The instance root password
+    cores: "{{ item.cores | default(omit) }}"                   # Specify number of cores per socket
+    description: "{{ item.description | default(omit) }}"       # Specify the description for the container
+    disk: "{{ pve_storage }}:{{ item.disk | default(8) }}"      # Disk size in GB for instance
+    hookscript: "{{ item.hookscript_volid | default(hookscript_volid | default(omit)) }}"
+    hostname: "{{ item.hostname }}"                             # The instance hostname
+    memory: "{{ item.memory | default(omit) }}"                 # Memory size in MB for instance
+    netif:                                                      # Specifies network interfaces for the container
+      net0: "{{ item.net0 | default(omit) }}"
+    swap: "{{ item.swap | default(omit) }}"                     # Swap memory size in MB for instance
+    tags: "{{ item.tags | default(omit) }}"                     # List of tags to apply to the container
+    vmid: "{{ item.vmid | default(omit) }}"                     # Unique id for instance
+    features: "{{ item.features | default(features | default(omit)) }}"              # Specifies a list of features to be enabled.
+    nameserver: "{{ item.nameserver | default(nameserver | default(omit)) }}"        # Sets DNS server IP address
+    onboot: "{{ item.onboot | default(onboot | default(omit)) }}"                    # Specifies whether a VM will be started during system bootup
+    searchdomain: "{{ item.searchdomain | default(searchdomain | default(omit)) }}"  # Sets DNS search domain
+    timezone: "{{ item.timezone | default(timezone | default(omit)) }}"              # Timezone used by the container
+    unprivileged: "{{ item.unprivileged | default(unprivileged | default(omit)) }}"  # Indicate if the container should be unprivileged
+
+    # Task actions
+    state: "present"                                            # Indicate desired state of the instance
+  with_items:
+    # Iterates over the list of containers (defined in new_lxc variable) and deletes each one
+    - "{{ new_lxc }}"
+  loop_control:
+    pause: 5
+  notify:
+    - sleep
