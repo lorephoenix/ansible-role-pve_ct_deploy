@@ -1,0 +1,8 @@
+collections:
+  - name: community.general
+    version: ">=9.4.0"
+    source: https://galaxy.ansible.com
+roles:
+  - src: https://github.com/lorephoenix/ansible-role-pve_ct_download
+    version: origin/main
+    name: pve_ct_download
