@@ -102,6 +102,12 @@ Here’s an example of how to use this role:
         pve_state: "present"
         pve_tokenid: "root@pam!Ansible"
 
+        # Template and Storage Variables
+        pve_package: "debian-12"
+        pve_storage: "local-lvm"
+        pve_template_state: "present"
+        pve_template_storage: "local-lvm"
+
         # Container Deployment Variables
         hookscript_volid: "local:snippets/pve-hookscript-ansible_proxy.sh"
         new_lxc:
