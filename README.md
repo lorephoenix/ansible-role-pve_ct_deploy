@@ -109,6 +109,7 @@ Here’s an example of how to use this role:
         pve_template_storage: "local-lvm"
 
         # Container Deployment Variables
+        instance_state: "present"
         hookscript_volid: "local:snippets/pve-hookscript-ansible_proxy.sh"
         new_lxc:
             - hostname: "lxc-1"
