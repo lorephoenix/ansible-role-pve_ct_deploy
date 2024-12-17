@@ -1,0 +1,51 @@
+---
+# tasks file for pve_ct_deploy
+#
+#  ████████╗ █████╗ ███████╗██╗  ██╗
+#  ╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝
+#     ██║   ███████║███████╗█████╔╝
+#     ██║   ██╔══██║╚════██║██╔═██╗
+#     ██║   ██║  ██║███████║██║  ██╗
+#     ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+#
+
+# -----------------------------------------------------------------------------
+# TASK FILE: hookscript.yml
+# DESCRIPTION: This task file manages the integration of a hook script for 
+#              Proxmox containers.
+#             - Step 1 retrieves storage content from a specific Proxmox node.
+#             - Step 2 verifies that the storage contains a volume matching the
+#               specified `hookscript_volid`.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# STEP 2.1: Retrieve storage contents
+# -----------------------------------------------------------------------------
+- name: >-
+    (pve_ct_deploy) | hookscript | Retrieves information about stored objects on a specific storage attached to a node.
+  community.general.proxmox_storage_contents_info:
+    # Proxmox API connection details
+    api_host: "{{ pve_host }}"                                  # Proxmox API host
+    api_port: "{{ pve_port }}"                                  # Proxmox API port
+    api_token_id: "{{ pve_tokenid.split('!')[1] }}"             # Token ID for API authentication
+    api_token_secret: "{{ pve_token_secret }}"                  # Token secret for API authentication
+    api_user: "{{ pve_tokenid.split('!')[0] }}"                 # Proxmox API user extracted from token
+    validate_certs: "{{ pve_validate_certs | default(false) }}" # SSL certificate validation
+
+    # Proxmox node details
+    node: "{{ pve_node }}"                                      # Target Proxmox node
+    storage: "{{ hookscript_volid.split(':')[0] }}"             # Storage name to query
+    content: all                                                # Fetch all types of storage content
+  register: this                                                # Register the output to "this" for further processing
+
+# -----------------------------------------------------------------------------
+# STEP 2.2: Verify hook script volume existence
+# -----------------------------------------------------------------------------
+- name: (pve_ct_deploy) | hookscript | Validate storage contains the specified hookscript volume.
+  ansible.builtin.assert:
+    that:
+      - this.proxmox_storage_content | selectattr('volid', 'search', hookscript_volid | string) | list | length > 0 
+    fail_msg: >-
+      "No matching volumes were found in the Proxmox storage for the specified
+       hookscript_volid: {{ hookscript_volid }}. Ensure the volume exists and
+      that the correct storage is being queried."
