@@ -1,0 +1,112 @@
+---
+# tasks file for pve_ct_deploy
+#
+#  ████████╗ █████╗ ███████╗██╗  ██╗
+#  ╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝
+#     ██║   ███████║███████╗█████╔╝
+#     ██║   ██╔══██║╚════██║██╔═██╗
+#     ██║   ██║  ██║███████║██║  ██╗
+#     ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+#
+
+# -----------------------------------------------------------------------------
+# TASK FILE: main.yml
+# DESCRIPTION: This task file serves as the main entry point for the
+#              Proxmox VE (PVE) container deployment process. It orchestrates
+#              key steps, including loading OS-specific variables, importing
+#              prerequisite validations, managing OS templates, and creating
+#              containers. The tasks are modular and tagged for flexible
+#              execution, ensuring compatibility across diverse environments
+#              and streamlined automation.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# STEP 1: Import task the current playbook for subsequent execution
+# -----------------------------------------------------------------------------
+# Import the 'prerequisite' task file statically to perform pre-deployment
+# checks. This task ensures that all necessary prerequisites are met before
+# proceeding with other steps in the deployment process.
+- name: (pve_ct_deploy) | main | Import 'prerequisite' task statically
+  ansible.builtin.import_tasks: "prerequisite.yml"
+  tags:
+    - prerequisite                                              # Specific tag for prerequisite tasks
+    - pve_ct_deploy                                             # General tag for the deployment
+
+# -----------------------------------------------------------------------------
+# STEP 2: Import hook script tasks (optional)
+# -----------------------------------------------------------------------------
+# Import the 'hookscript' task statically during the Proxmox container
+# deployment process. This task ensures that the hookscript is applied only if
+# the instance state is 'present' and the 'use_hookscript' variable is enabled.
+- name: (pve_ct_deploy) | main | Import 'hookscript' task statically
+  ansible.builtin.import_tasks: "hookscript.yml"
+  when:
+    - instance_state == "present"                               # Proceed only if the desired state is 'present'
+    - hookscript_volid | length > 1                             # Proceed only if 'use_hookscript' is enabled (default is false if undefined)
+  tags:
+    - hookscript                                                # Specific tag for hookscript tasks
+    - pve_ct_deploy                                             # General tag for the deployment
+
+# -----------------------------------------------------------------------------
+# STEP 3: Import OS template management tasks
+# -----------------------------------------------------------------------------
+# Import the 'ostemplate' task file statically to handle the deployment of OS
+# templates. This task includes logic specific to managing and deploying
+# container templates.
+- name: (pve_ct_deploy) | main | Import 'ostemplate' task statically
+  ansible.builtin.import_tasks: "ostemplate.yml"
+  when:
+    - instance_state == "present"                               # Proceed only if the desired state is 'present'
+  tags:
+    - ostemplate                                                # Specific tag for OS template tasks
+    - pve_ct_deploy                                             # General tag for the deployment
+
+# -----------------------------------------------------------------------------
+# STEP 4: Create and Start Containers (Conditional)
+# -----------------------------------------------------------------------------
+- name: (pve_ct_deploy) | main | Construct ...
+  when:
+    - ostemplate is defined                                     # Ensure the 'ostemplate' variable is available
+    - instance_state == "present"                               # Proceed only if the desired state is 'present'
+  tags:
+    - pve_ct_deploy                                             # General tag for the deployment
+  block:
+
+    # Import the 'create' task file statically to create containers or resources.
+    # This task is executed only when the 'ostemplate' variable is defined and
+    # the desired state ('instance_state') is set to 'present', indicating that a
+    # resource creation is required.
+    - name: (pve_ct_deploy) | main | Import 'create' task statically
+      ansible.builtin.import_tasks: "create.yml"
+    
+    - meta: flush_handlers
+      
+    # Dynamically include tasks to start containers
+    - name: (pve_ct_deploy) | main | Dynamically include 'start' tasks
+      ansible.builtin.include_tasks: "start.yml"
+      loop: "{{ new_lxc }}"
+      loop_control:
+        loop_var: lxc
+
+# -----------------------------------------------------------------------------
+# STEP 5: Stop and Delete Containers (Conditional)
+# -----------------------------------------------------------------------------     
+- name: (pve_ct_deploy) | main | Destruct ...
+  when:
+    - instance_state == "absent"                               # Proceed only if the desired state is 'absent'
+  tags:
+    - pve_ct_deploy                                             # General tag for the deployment
+  block:
+
+    # Dynamically include tasks to stop containers
+    - name: (pve_ct_deploy) | main | Dynamically include 'stop' tasks
+      ansible.builtin.include_tasks: "stop.yml"
+      loop: "{{ new_lxc }}"
+      loop_control:
+        loop_var: lxc
+
+    # Import the 'delete' task file statically to delete containers or resources.
+    # This task is executed only when desired state ('instance_state') is set to
+    # 'absent', indicating that a resource is obsolete.
+    - name: (pve_ct_deploy) | main | Import 'delete' task statically
+      ansible.builtin.import_tasks: "delete.yml"
