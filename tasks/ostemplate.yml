@@ -1,0 +1,76 @@
+---
+# tasks file for pve_ct_deploy
+#
+#  ████████╗ █████╗ ███████╗██╗  ██╗
+#  ╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝
+#     ██║   ███████║███████╗█████╔╝
+#     ██║   ██╔══██║╚════██║██╔═██╗
+#     ██║   ██║  ██║███████║██║  ██╗
+#     ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+#
+
+# -----------------------------------------------------------------------------
+# TASK FILE: ostemplate.yml
+# DESCRIPTION: This file is responsible for retrieving and processing
+#              information about stored container templates ('vztmpl') on a
+#              specific Proxmox storage node. It sets facts to be used for
+#              deploying Proxmox CTs.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# STEP 3.1: Retrieve storage contents
+# -----------------------------------------------------------------------------
+- name: >-
+    (pve_ct_deploy) | ostemplate | Retrieves information about stored objects on a specific storage attached to a node.
+  community.general.proxmox_storage_contents_info:
+    # Proxmox API connection details
+    api_host: "{{ pve_host }}"                                  # Proxmox API host
+    api_port: "{{ pve_port }}"                                  # Proxmox API port
+    api_token_id: "{{ pve_tokenid.split('!')[1] }}"             # Token ID for API authentication
+    api_token_secret: "{{ pve_token_secret }}"                  # Token secret for API authentication
+    api_user: "{{ pve_tokenid.split('!')[0] }}"                 # Proxmox API user extracted from token
+    validate_certs: "{{ pve_validate_certs | default(false) }}" # SSL certificate validation
+
+    # Proxmox node details
+    node: "{{ pve_node }}"                                      # Target Proxmox node
+    storage: "{{ pve_template_storage }}"                       # Storage name to query
+    content: all                                                # Fetch all types of storage content
+  register: this                                                # Register the output to "this" for further processing
+
+# -----------------------------------------------------------------------------
+# STEP 3.2: Filter relevant template data ('vztmpl') from retrieved storage 
+#           contents
+# -----------------------------------------------------------------------------
+- name: (pve_ct_deploy) | ostemplate | Filtering 'vztmpl' content of previous collection.
+  ansible.builtin.set_fact:
+    vztmpl: >-                                                  # Extract only items with supported formats
+      {%- set results = [] -%}
+      {%- for item in this.proxmox_storage_content -%}
+        {%- if item.format in ['tzst', 'txz'] -%}
+          {%- set _ = results.append({'volid': item.volid}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ results }}
+
+# -----------------------------------------------------------------------------
+# STEP 3.3: Determine the latest matching container template and set as a fact
+# -----------------------------------------------------------------------------
+- name: (pve_ct_deploy) | ostemplate | Attempt to set the ostemplate fact
+  block:
+
+    # Find the latest available template matching the package name
+    - name: (pve_ct_deploy) | ostemplate | Find latest available and stored 'pve_package'.
+      ansible.builtin.set_fact:
+        ostemplate: >-
+          {{ (vztmpl |
+            selectattr('volid', 'search', pve_package | string ) |
+            list |
+            sort(attribute='volid', reverse=true) |
+            first).volid
+          }}
+
+  rescue:
+    # Handle failure when no matching volid is found
+    - name: (pve_ct_deploy) | ostemplate | Set a failure message for missing volid
+      ansible.builtin.fail:
+        msg: "Unable to find CT template containing the string '{{ pve_package }}'."
