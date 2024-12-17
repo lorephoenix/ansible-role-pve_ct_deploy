@@ -1,0 +1,47 @@
+---
+# tasks file for pve_ct_deploy
+#
+#  ████████╗ █████╗ ███████╗██╗  ██╗
+#  ╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝
+#     ██║   ███████║███████╗█████╔╝
+#     ██║   ██╔══██║╚════██║██╔═██╗
+#     ██║   ██║  ██║███████║██║  ██╗
+#     ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+#
+
+# -----------------------------------------------------------------------------
+# TASK FILE: delete.yml
+# DESCRIPTION: This task file automates the removal of LXC containers on a 
+#              Proxmox node. It iterates over a list of container definitions
+#              and deletes each container based on its unique VMID. Additional
+#              options ensure associated storage and running containers are 
+#              removed cleanly.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# STEP 5.2: Delete LXC Containers
+# -----------------------------------------------------------------------------
+- name: (pve_ct_deploy) | delete | Remove container instance
+  community.general.proxmox:
+    # Proxmox API connection details
+    api_host: "{{ pve_host }}"                                  # Proxmox API host
+    api_port: "{{ pve_port }}"                                  # Proxmox API port
+    api_token_id: "{{ pve_tokenid.split('!')[1] }}"             # Token ID for API authentication
+    api_token_secret: "{{ pve_token_secret }}"                  # Token secret for API authentication
+    api_user: "{{ pve_tokenid.split('!')[0] }}"                 # Proxmox API user extracted from token
+    validate_certs: "{{ pve_validate_certs | default(false) }}" # SSL certificate validation
+
+    # Proxmox node details
+    node: "{{ pve_node }}"                                      # The node from which the LXC container will be removed
+
+    # Task actions
+    state: "absent"                                             # Ensures the container is absent (deleted)
+    force: true                                                 # Force deletion even if the container is running
+    purge: true                                                 # Removes associated storage (purge the container data)
+    vmid: "{{ item.vmid }}"                                     # VMID of the container to be deleted (from the loop)
+  when:
+    # This condition ensures the task is executed only if the 'vmid' is defined for the container
+    - item.vmid is defined
+  with_items:
+    # Iterates over the list of containers (defined in new_lxc variable) and deletes each one
+    - "{{ new_lxc }}"
