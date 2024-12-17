@@ -1,0 +1,62 @@
+---
+# tasks file for pve_ct_deploy
+#
+#  ████████╗ █████╗ ███████╗██╗  ██╗
+#  ╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝
+#     ██║   ███████║███████╗█████╔╝
+#     ██║   ██╔══██║╚════██║██╔═██╗
+#     ██║   ██║  ██║███████║██║  ██╗
+#     ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+#
+
+# -----------------------------------------------------------------------------
+# TASK FILE: start.yml
+# DESCRIPTION: This task file automates the process of starting LXC containers
+#              on a specified Proxmox node. It first lists all LXC virtual 
+#              machines on the node to verify their existence and then starts
+#              the specified container. The start operation is configured 
+#              with a timeout to prevent the task from hanging indefinitely.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# STEP 4.2.1: List all LXC virtual machines on the node
+# -----------------------------------------------------------------------------
+- name: (pve_ct_deploy) | start | List all LXC virtual machines on node
+  community.general.proxmox_vm_info:
+      
+    # Proxmox API connection details
+    api_host: "{{ pve_host }}"                                  # Proxmox API host
+    api_port: "{{ pve_port }}"                                  # Proxmox API port
+    api_token_id: "{{ pve_tokenid.split('!')[1] }}"             # Token ID for API authentication
+    api_token_secret: "{{ pve_token_secret }}"                  # Token secret for API authentication
+    api_user: "{{ pve_tokenid.split('!')[0] }}"                 # Proxmox API user extracted from token
+    validate_certs: "{{ pve_validate_certs | default(false) }}" # SSL certificate validation
+    node: "{{ pve_node }}"                                      # Proxmox node details
+    type: lxc                                                   # Type of instance (e.g. lxc, qemu or all)
+    name: "{{ lxc.hostname }}"                                  # The instance hostname
+  changed_when: false
+  failed_when: >-                                               # Fail when no vmid found
+    this.proxmox_vms
+    | map(attribute='vmid')
+    | list
+    | length == 0
+  register: this                                                # Register the output to "this" for further processing
+
+# -----------------------------------------------------------------------------
+# STEP 4.2.2: Start the specified container instance with a timeout
+# -----------------------------------------------------------------------------
+- name: >-
+    (pve_ct_deploy) | start | Start the container instance with a 300-second timeout
+  community.general.proxmox:
+    # Proxmox API connection details
+    api_host: "{{ pve_host }}"                                  # Proxmox API host
+    api_port: "{{ pve_port }}"                                  # Proxmox API port
+    api_token_id: "{{ pve_tokenid.split('!')[1] }}"             # Token ID for API authentication
+    api_token_secret: "{{ pve_token_secret }}"                  # Token secret for API authentication
+    api_user: "{{ pve_tokenid.split('!')[0] }}"                 # Proxmox API user extracted from token
+    validate_certs: "{{ pve_validate_certs | default(false) }}" # SSL certificate validation
+    vmid: "{{ this.proxmox_vms | map(attribute=\"vmid\") | list | first }}" # Extract the first VM ID
+    state: started                                              # Desired state of the container
+    timeout: "{{ instance_timeout | default(300) }}"            # Set timeout to 300 seconds for the start operation
+  notify:
+    - sleep
