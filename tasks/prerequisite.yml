@@ -1,0 +1,152 @@
+---
+# tasks file for pve_ct_deploy
+#
+#  ████████╗ █████╗ ███████╗██╗  ██╗
+#  ╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝
+#     ██║   ███████║███████╗█████╔╝
+#     ██║   ██╔══██║╚════██║██╔═██╗
+#     ██║   ██║  ██║███████║██║  ██╗
+#     ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+#
+
+# -----------------------------------------------------------------------------
+# TASK FILE: prerequisite.yml
+# DESCRIPTION: This file is responsible for setting and validating Proxmox VE
+#              deployment prerequisites. It ensures the environment is correctly
+#              configured before proceeding with further tasks.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# STEP 1.1: Retrieve the version of the community.general collection installed.
+# -----------------------------------------------------------------------------
+- name: (pve_ct_deploy) | prerequisite | Retrieve the version of the community.general collection installed.
+  ansible.builtin.set_fact:
+    community_general_version: "{{ lookup('community.general.collection_version', 'community.general') }}"
+
+# -----------------------------------------------------------------------------
+# STEP 1.2: Set a default value for the 'instance_state' variable if it is 
+#           undefined or not set to 'absent'.
+# -----------------------------------------------------------------------------
+- name: (pve_ct_deploy) | prerequisite | Define 'instance_state' variable, if not exist
+  ansible.builtin.set_fact:
+    instance_state: "present"
+  when:
+    - instance_state is undefined or (instance_state|lower) != "absent"
+
+# -----------------------------------------------------------------------------
+# STEP 1.3: Validate the operating system and software versions.
+# -----------------------------------------------------------------------------
+# Verify that the Ansible version is at least 2.17.
+- name: (pve_ct_deploy) | prerequisite | Enforce minimum Ansible version.
+  ansible.builtin.assert:
+    that:
+      - ansible_version.full is version('2.17', '>=')
+    msg: "Minimum ansible-core version required is 2.17"
+
+# Ensure that the community.general collection version is at least 9.4.0.
+- name: (pve_ct_deploy) | prerequisite | Assert community.general version is 9.4.0 or higher.
+  ansible.builtin.assert:
+    that:
+      - community_general_version is not none
+      - community_general_version is version('9.4.0', '>=')
+    fail_msg: >-
+      "community.general collection must be version 9.4.0 or higher! Current version: {{ community_general_version }}"
+    success_msg: "community.general collection is version 9.4.0 or higher!"
+
+# -----------------------------------------------------------------------------
+# STEP 1.4: Validate essential variables.
+# -----------------------------------------------------------------------------
+# Check if the variable 'lxc_pubkey' is defined and has a valid length.
+- name: (pve_ct_deploy) | prerequisite | Check if the variable 'pubkey' is defined and has a valid length.
+  ansible.builtin.assert:
+    that:
+      - pubkey is defined
+      - pubkey|length > 1
+    fail_msg: "The variable 'pubkey' isn't defined."
+    success_msg: "The variable 'pubkey' is set."
+    quiet: true
+
+# Ensure each element in the 'new_lxc' list contains the 'hostname' key.
+- name: (pve_ct_deploy) | prerequisite | Ensure each element in the 'new_lxc' list contains the 'hostname' key.
+  ansible.builtin.assert:
+    that:
+      - item.hostname is defined
+    fail_msg: >-
+      "Missing dictionary key 'hostname' under list 'new_lxc'. See problemeatic elements
+      {{ new_lxc | selectattr('hostname', 'undefined') }}"
+    success_msg: "All elements of list 'new_lxc' have a dictionary key 'hostname'"
+    quiet: true
+  with_items:
+    - "{{ new_lxc }}"
+
+# Ensure each element in the 'new_lxc' list contains the 'hostname' key.
+- name: (pve_ct_deploy) | prerequisite | Ensure 'pve_api_password' is set
+  ansible.builtin.assert:
+    that:
+      - pve_api_password is defined
+      - pve_api_password | length > 5
+    fail_msg: >-
+      "It isn't currently possible to create a container with hookscript
+      attached using an user API token not even with root@pam token ID."
+    quiet: true
+  with_items:
+    - "{{ new_lxc }}"
+
+# -----------------------------------------------------------------------------
+# STEP 1.5: Retrieve and validate Proxmox VE node and storage information.
+# -----------------------------------------------------------------------------
+# Retrieve a list of Proxmox VE nodes and check if the specified node exists.
+- name: (pve_ct_deploy) | prerequisite | Retrieve a list of Proxmox VE nodes and check if the specified node exists.
+  community.general.proxmox_node_info:
+    # Proxmox API connection details
+    api_host: "{{ pve_host }}"                                  # Proxmox API host
+    api_port: "{{ pve_port }}"                                  # Proxmox API port
+    api_token_id: "{{ pve_tokenid.split('!')[1] }}"             # Token ID for API authentication
+    api_token_secret: "{{ pve_token_secret }}"                  # Token secret for API authentication
+    api_user: "{{ pve_tokenid.split('!')[0] }}"                 # Proxmox API user extracted from token
+    validate_certs: "{{ pve_validate_certs | default(false) }}" # SSL certificate validation
+  register: nodes                                               # Register the output to "nodes" for further processing
+  failed_when: >-                                               # Fail when matching the specified pve_node is empty
+    nodes.proxmox_nodes
+    | selectattr('node', 'match', pve_node)
+    | map(attribute='node')
+    | list
+    | length == 0
+  changed_when: false
+
+# Fetch information about the storage configurations available on Proxmox VE.
+- name: (pve_ct_deploy) | prerequisite | Fetch information about the storage configurations available on Proxmox VE.
+  community.general.proxmox_storage_info:
+    # Proxmox API connection details
+    api_host: "{{ pve_host }}"                                  # Proxmox API host
+    api_port: "{{ pve_port }}"                                  # Proxmox API port
+    api_token_id: "{{ pve_tokenid.split('!')[1] }}"             # Token ID for API authentication
+    api_token_secret: "{{ pve_token_secret }}"                  # Token secret for API authentication
+    api_user: "{{ pve_tokenid.split('!')[0] }}"                 # Proxmox API user extracted from token
+    validate_certs: "{{ pve_validate_certs | default(false) }}" # SSL certificate validation
+  register: this                                                # Register the output to "this" for further processing
+
+# Check if the specified 'pve_storage' exists and is associated with the Proxmox VE node.
+- name: >-
+    (pve_ct_deploy) | prerequisite | Check if the specified 'pve_storage' exists and is associated with the Proxmox VE
+    node.
+  ansible.builtin.set_fact:
+    valid_storage: >-
+      {%- set ns = namespace(foo=false) -%}
+      {%- for item in this.proxmox_storages -%}
+      {%- if ("rootdir" in item.content) and (pve_storage == item.storage) and (pve_node in item.nodes) -%}
+      {%- set ns.foo = true -%}
+      {%- endif -%}{%- endfor -%}
+      {{ ns.foo }}
+
+# Ensure that the 'pve_storage' value is valid and corresponds to a container storage.
+- name: >-
+    (pve_ct_deploy) | prerequisite | Ensure that the 'pve_storage' value is valid and corresponds to a container
+    storage.
+  ansible.builtin.assert:
+    that:
+      - valid_storage
+    fail_msg: >-
+      "The value '{{ pve_storage }}' of the variable 'pve_storage' isn't a storage of container root filesystems."
+    success_msg: "The variable 'valid_storage' is set with the boolean 'true'"
+    quiet: true
