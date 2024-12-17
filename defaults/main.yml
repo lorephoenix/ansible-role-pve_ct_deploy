@@ -1,0 +1,25 @@
+---
+# defaults file for pve_ct_deploy
+
+# Proxmox connection details
+# pve_api_password: null
+pve_host: "proxmox.example.com"
+pve_node: "proxmox"
+pve_state: "present"
+pve_tokenid: "root@pam!mytokenid"
+# pve_token_secret: null
+pve_validate_certs: false
+
+# Template and Storage Variable
+pve_package: "archlinux-base"
+pve_storage: "local"
+pve_template_state: "present"
+pve_template_storage: "local"
+
+# Container Deployment Variables
+hookscript_volid: null
+instance_state: "present"
+new_lxc: []
+# pubkey: null
+# root_password: null
+
